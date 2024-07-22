@@ -1,0 +1,22 @@
+# Server configuration
+server:
+  ssl: true
+  redis_host: "127.0.0.1"
+  redis_port: 6379
+
+# BGL configuration
+BGL:
+  host: "localhost"
+  port: 8455
+  confirmations: 1
+  rpc_user: "user"
+  rpc_pass: "pass"
+  wallet_name: "wallet"
+
+# EVM configuration
+EVM:
+  address: "0x1A2B3C..."
+  private_key: "abcdef..."
+
+# Other settings
+fee_percentage: 1
