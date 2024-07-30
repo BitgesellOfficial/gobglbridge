@@ -24,5 +24,8 @@ go.work
 # IntelliJ
 .idea/
 
-# logs
+# Config
+/cmd/server/config.yml
+
+# Logs
 /cmd/server/logs/*
