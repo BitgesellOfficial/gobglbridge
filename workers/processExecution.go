@@ -3,17 +3,18 @@ package workers
 import (
 	"context"
 	"fmt"
+	"log"
+	"math/big"
+	"strconv"
+	"strings"
+	"time"
+
 	"gobglbridge/BGLRPC"
 	"gobglbridge/EVMRPC"
 	"gobglbridge/EVMRPC/ierc20"
 	"gobglbridge/config"
 	"gobglbridge/redis"
 	"gobglbridge/types"
-	"log"
-	"math/big"
-	"strconv"
-	"strings"
-	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -29,7 +30,7 @@ func Worker_processExecution() {
 		if err != nil {
 			log.Printf("Error getting pending bridge operations by status: %v", err)
 		} else if pending == nil {
-			//log.Printf("No pending operations are present")
+			// log.Printf("No pending operations are present")
 		} else {
 			if pending.SourceChain > 0 {
 				// WBGL to BGL
@@ -64,6 +65,9 @@ func Worker_processExecution() {
 					// deduct bridge fee
 					amountFee := amountFloat * float64(config.Config.FeePercentage) / 100.0
 					amountFloat = amountFloat - amountFee
+
+					// truncate to 8 decimal places
+					amountFloat = float64(int(amountFloat*100000000)) / 100000000
 
 					log.Printf("Sending BGL mainnet tx: %.8f (fee %.8f) to %s", amountFloat, amountFee, addrbookRecord.DestAddress)
 
@@ -197,7 +201,7 @@ func Worker_processExecution() {
 			}
 		}
 
-		//break // debugging
+		// break // debugging
 	}
 }
 
