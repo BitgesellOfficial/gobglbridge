@@ -3,9 +3,6 @@ package workers
 import (
 	"context"
 	"crypto/tls"
-	"errors"
-	"gobglbridge/config"
-	"gobglbridge/workers/handlers"
 	"log"
 	"net/http"
 	"os"
@@ -13,6 +10,9 @@ import (
 	"path/filepath"
 	"syscall"
 	"time"
+
+	"gobglbridge/config"
+	"gobglbridge/workers/handlers"
 
 	"github.com/go-chi/chi"
 	"github.com/go-chi/chi/middleware"
@@ -45,10 +45,22 @@ func Worker_HTTP() {
 	r.Get("/*", func(w http.ResponseWriter, r *http.Request) {
 		workDir, _ := os.Getwd()
 		filesDir := filepath.Join(workDir, "app")
-		if _, err := os.Stat(filesDir + r.URL.Path); errors.Is(err, os.ErrNotExist) {
-			http.ServeFile(w, r, filepath.Join(filesDir, "index.html"))
+		filePath := filepath.Join(filesDir, r.URL.Path)
+
+		fileInfo, err := os.Stat(filePath)
+		if err != nil || fileInfo.IsDir() {
+			filePath = filepath.Join(filesDir, "index.html")
+			fileInfo, _ = os.Stat(filePath)
 		}
-		http.ServeFile(w, r, filesDir+r.URL.Path)
+
+		file, err := os.Open(filePath)
+		if err != nil {
+			// this should not happen at this point
+			http.Error(w, "unable to open", http.StatusInternalServerError)
+			return
+		}
+
+		http.ServeContent(w, r, file.Name(), fileInfo.ModTime(), file)
 	})
 
 	var server *http.Server
