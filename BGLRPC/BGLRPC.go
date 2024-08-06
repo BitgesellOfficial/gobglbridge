@@ -2,22 +2,23 @@ package BGLRPC
 
 import (
 	"errors"
-	"gobglbridge/config"
 	"log"
 
-	"github.com/toorop/go-bitcoind"
+	"gobglbridge/config"
+
+	"github.com/bitgesellofficial/go-bgld"
 )
 
 // simple wrapper (probaby could be omitted)
 type RPCClient struct {
-	Client *bitcoind.Bitcoind
+	Client *bgld.Bgld
 }
 
 var client *RPCClient
 
 func GetClient() *RPCClient {
 	if client == nil {
-		cl, err := bitcoind.New(config.Config.BGL.Host, config.Config.BGL.Port, config.Config.BGL.RPCUser, config.Config.BGL.RPCPassword, config.Config.BGL.WalletName, false)
+		cl, err := bgld.New(config.Config.BGL.Host, config.Config.BGL.Port, config.Config.BGL.RPCUser, config.Config.BGL.RPCPassword, false)
 		if err != nil {
 			log.Fatalln(err)
 		}
@@ -46,7 +47,7 @@ func (c *RPCClient) GetNewAddress() (string, error) {
 	return c.Client.GetNewAddress(config.Config.BGL.WalletName)
 }
 
-func (c *RPCClient) ListSinceBlock(blockHash string, confirmations uint32) ([]bitcoind.Transaction, string, error) {
+func (c *RPCClient) ListSinceBlock(blockHash string, confirmations uint32) ([]bgld.Transaction, string, error) {
 	return c.Client.ListSinceBlock(blockHash, confirmations)
 }
 
@@ -57,7 +58,7 @@ func (c *RPCClient) GetFromAddressForTransaction(txId string) (string, error) {
 		return "", err
 	}
 
-	rawTxObj, ok := rawTx.(bitcoind.RawTransaction)
+	rawTxObj, ok := rawTx.(bgld.RawTransaction)
 	if !ok {
 		return "", errors.New("cannot unmarshal raw transaction")
 	}
@@ -68,7 +69,7 @@ func (c *RPCClient) GetFromAddressForTransaction(txId string) (string, error) {
 		return "", err
 	}
 
-	rawTxObj, ok = rawTx.(bitcoind.RawTransaction)
+	rawTxObj, ok = rawTx.(bgld.RawTransaction)
 	if !ok {
 		return "", errors.New("cannot unmarshal raw transaction")
 	}

@@ -4,18 +4,19 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"gobglbridge/config"
-	"gobglbridge/types"
 	"log"
 	"strings"
 	"time"
+
+	"gobglbridge/config"
+	"gobglbridge/types"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/gomodule/redigo/redis"
 	"github.com/google/uuid"
 )
 
-var RedisPool *redis.Pool
+var pool *redis.Pool
 
 func timeoutDialOptions() []redis.DialOption {
 	return []redis.DialOption{
@@ -25,33 +26,33 @@ func timeoutDialOptions() []redis.DialOption {
 	}
 }
 
-func RedisInit() {
+func Init() {
 	redisAddr := fmt.Sprintf("%s:%d", config.Config.Server.RedisHost, config.Config.Server.RedisPort)
-	RedisPool = &redis.Pool{
+	pool = &redis.Pool{
 		MaxIdle: 5,
 		Dial:    func() (redis.Conn, error) { return redis.Dial("tcp", redisAddr, timeoutDialOptions()...) },
 	}
 }
 
 func GetBGLScannedBlock() (string, error) {
-	conn := RedisPool.Get()
+	conn := pool.Get()
 	defer conn.Close()
 
 	blockHash, err := redis.String(conn.Do("GET", "BGLBlockHash"))
-	if err != nil && err != redis.ErrNil {
-		log.Printf("error Redis get: %s", err.Error())
-		return "", err
-	} else {
-		if err == redis.ErrNil {
-			return "", nil
-		} else {
-			return blockHash, nil
-		}
+	if err == nil {
+		return blockHash, nil
 	}
+
+	if errors.Is(err, redis.ErrNil) {
+		return "", nil
+	}
+
+	log.Printf("error Redis get: %s", err.Error())
+	return "", err
 }
 
 func SetBGLScannedBlock(blockHash string) error {
-	conn := RedisPool.Get()
+	conn := pool.Get()
 	defer conn.Close()
 
 	_, err := conn.Do("SET", "BGLBlockHash", blockHash)
@@ -64,24 +65,24 @@ func SetBGLScannedBlock(blockHash string) error {
 }
 
 func GetEVMScannedBlock(chainID int) (int, error) {
-	conn := RedisPool.Get()
+	conn := pool.Get()
 	defer conn.Close()
 
 	blockHeight, err := redis.Int(conn.Do("GET", fmt.Sprintf("chainBlockScanned:%d", chainID)))
-	if err != nil && err != redis.ErrNil {
-		log.Printf("error Redis get: %s", err.Error())
-		return -1, err
-	} else {
-		if err == redis.ErrNil {
-			return -1, nil
-		} else {
-			return blockHeight, nil
-		}
+	if err == nil {
+		return blockHeight, nil
 	}
+
+	if errors.Is(err, redis.ErrNil) {
+		return -1, nil
+	}
+
+	log.Printf("error Redis get: %s", err.Error())
+	return -1, err
 }
 
 func SetEVMScannedBlock(chainID int, blockHeight int) error {
-	conn := RedisPool.Get()
+	conn := pool.Get()
 	defer conn.Close()
 
 	_, err := conn.Do("SET", fmt.Sprintf("chainBlockScanned:%d", chainID), blockHeight)
@@ -95,7 +96,7 @@ func SetEVMScannedBlock(chainID int, blockHeight int) error {
 
 // note that multiple sets should not contain one operation
 func UpsertBridgeOperation(op *types.BridgeOperation) error {
-	conn := RedisPool.Get()
+	conn := pool.Get()
 	defer conn.Close()
 
 	if op == nil {
@@ -133,7 +134,7 @@ func UpsertBridgeOperation(op *types.BridgeOperation) error {
 }
 
 func ChangeBridgeOperationStatus(op *types.BridgeOperation, prevStatus string) error {
-	conn := RedisPool.Get()
+	conn := pool.Get()
 	defer conn.Close()
 
 	if op == nil {
@@ -211,7 +212,7 @@ func FindBridgeOperationStatus(status string) (*types.BridgeOperation, error) {
 }
 
 func FindBridgeOperationByFieldStringValue(field, value string, status string) (*types.BridgeOperation, error) {
-	conn := RedisPool.Get()
+	conn := pool.Get()
 	defer conn.Close()
 
 	if field == "" || value == "" {
@@ -235,14 +236,14 @@ func FindBridgeOperationByFieldStringValue(field, value string, status string) (
 
 		for _, key := range opKeys {
 			op, err := redis.Bytes(conn.Do("GET", key))
-			if err != nil && err != redis.ErrNil {
+			if err != nil && !errors.Is(err, redis.ErrNil) {
 				log.Printf("error Redis GET: %s", err.Error())
 				return nil, err
 			}
 
 			var opStruct types.BridgeOperation
-			//TODO: a record can be missing, don't crash
-			//fmt.Printf("record:" + string(op) + "\n")
+			// TODO: a record can be missing, don't crash
+			// fmt.Printf("record:" + string(op) + "\n")
 			err = json.Unmarshal([]byte(op), &opStruct)
 			if err != nil {
 				return nil, err
@@ -267,7 +268,7 @@ func FindBridgeOperationByFieldStringValue(field, value string, status string) (
 }
 
 func UpsertAddressBookRecord(rec *types.AddressBookRecord) error {
-	conn := RedisPool.Get()
+	conn := pool.Get()
 	defer conn.Close()
 
 	if rec == nil {
@@ -304,47 +305,36 @@ func UpsertAddressBookRecord(rec *types.AddressBookRecord) error {
 }
 
 func GetAddressBookBySourceAddress(chainType types.ChainType, address string) (*types.AddressBookRecord, error) {
-	conn := RedisPool.Get()
+	conn := pool.Get()
 	defer conn.Close()
 
 	addrbook, err := redis.Bytes(conn.Do("GET", fmt.Sprintf("addrbook:%d:%s", chainType, strings.ToLower(address))))
-	if err != nil && err != redis.ErrNil {
+
+	// bug when tolower wasn't called and address went in mixed case
+	// let's retry with mixed case
+	if errors.Is(err, redis.ErrNil) {
+		addrbook, err = redis.Bytes(conn.Do("GET", fmt.Sprintf("addrbook:%d:%s", chainType, common.HexToAddress(address).Hex())))
+	}
+
+	if errors.Is(err, redis.ErrNil) {
+		return nil, nil
+	}
+
+	if err != nil {
 		log.Printf("error Redis get: %s", err.Error())
 		return nil, err
-	} else {
-		if err == redis.ErrNil {
-
-			// bug when tolower wasnt called and address went in mixed case
-			addrbook, err := redis.Bytes(conn.Do("GET", fmt.Sprintf("addrbook:%d:%s", chainType, common.HexToAddress(address).Hex())))
-			if err != nil && err != redis.ErrNil {
-				log.Printf("error Redis get: %s", err.Error())
-				return nil, err
-			} else {
-				if err == redis.ErrNil {
-					return nil, nil
-				} else {
-					var addrbookRecord types.AddressBookRecord
-					err = json.Unmarshal(addrbook, &addrbookRecord)
-					if err != nil {
-						return nil, err
-					}
-					return &addrbookRecord, nil
-				}
-			}
-
-		} else {
-			var addrbookRecord types.AddressBookRecord
-			err = json.Unmarshal(addrbook, &addrbookRecord)
-			if err != nil {
-				return nil, err
-			}
-			return &addrbookRecord, nil
-		}
 	}
+
+	var addrbookRecord types.AddressBookRecord
+	err = json.Unmarshal(addrbook, &addrbookRecord)
+	if err != nil {
+		return nil, err
+	}
+	return &addrbookRecord, nil
 }
 
 func FindAllBridgeOperationsByStatus(status string) ([]*types.BridgeOperation, error) {
-	conn := RedisPool.Get()
+	conn := pool.Get()
 	defer conn.Close()
 
 	if _, ok := config.RedisStatusSets[status]; !ok {
@@ -370,14 +360,14 @@ func FindAllBridgeOperationsByStatus(status string) ([]*types.BridgeOperation, e
 
 		for _, key := range opKeys {
 			op, err := redis.Bytes(conn.Do("GET", key))
-			if err != nil && err != redis.ErrNil {
+			if err != nil && !errors.Is(err, redis.ErrNil) {
 				log.Printf("error Redis GET: %s", err.Error())
 				return nil, err
 			}
 
 			var opStruct types.BridgeOperation
-			//TODO: a record can be missing, don't crash
-			//fmt.Printf("record:" + string(op) + "\n")
+			// TODO: a record can be missing, don't crash
+			// fmt.Printf("record:" + string(op) + "\n")
 			err = json.Unmarshal([]byte(op), &opStruct)
 			if err != nil {
 				return nil, err

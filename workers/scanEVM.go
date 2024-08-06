@@ -1,11 +1,12 @@
 package workers
 
 import (
+	"log"
+	"time"
+
 	"gobglbridge/config"
 	"gobglbridge/redis"
 	"gobglbridge/types"
-	"log"
-	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -30,10 +31,10 @@ func Worker_scanEVM(chainId int) {
 			log.Printf("Error getting last scanned EVM block hash: %s", err.Error())
 			continue
 		}
-		//if scannedBlockNum == -1 {
+		// if scannedBlockNum == -1 {
 		// init starting block numbers when running in new environment
-		//scannedBlockNum = config.EVMChains[chainId].ScannedBlockNum
-		//}
+		// scannedBlockNum = config.EVMChains[chainId].ScannedBlockNum
+		// }
 
 		lastScannedBlock := scannedBlockNum
 
@@ -46,7 +47,7 @@ func Worker_scanEVM(chainId int) {
 			continue
 		}
 		latestBlock, _ := hexutil.DecodeUint64(*latestBlockStr)
-		//fmt.Printf("Latest block on %s is: %d, last scanned is: %d\n", config.EVMChains[chainId].Name, latestBlock, scannedBlockNum)
+		// fmt.Printf("Latest block on %s is: %d, last scanned is: %d\n", config.EVMChains[chainId].Name, latestBlock, scannedBlockNum)
 
 		if scannedBlockNum == -1 {
 			scannedBlockNum = int(latestBlock) - config.EVMChains[chainId].SafetyWindow
@@ -64,7 +65,11 @@ func Worker_scanEVM(chainId int) {
 			} else {
 				log.Printf("Scanning blocks %s from %v to %v...\n", config.EVMChains[chainId].Name, blockNum, toBlock)
 			}
-			params := reqData{Address: config.EVMChains[chainId].ContractAddress, FromBlock: hexutil.EncodeUint64(fromBlock), ToBlock: hexutil.EncodeUint64(toBlock)}
+			params := reqData{
+				Address:   config.EVMChains[chainId].ContractAddress,
+				FromBlock: hexutil.EncodeUint64(fromBlock),
+				ToBlock:   hexutil.EncodeUint64(toBlock),
+			}
 			paramarr := make([]reqData, 0, 1)
 			paramarr = append(paramarr, params)
 
