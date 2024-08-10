@@ -12,7 +12,6 @@ require (
 	github.com/gomodule/redigo v1.9.2
 	github.com/google/uuid v1.6.0
 	github.com/kelseyhightower/envconfig v1.4.0
-	github.com/ybbus/jsonrpc v2.1.2+incompatible
 	gopkg.in/yaml.v2 v2.4.0
 )
 
