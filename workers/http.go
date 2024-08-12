@@ -3,16 +3,17 @@ package workers
 import (
 	"context"
 	"crypto/tls"
-	"errors"
-	"gobglbridge/config"
-	"gobglbridge/workers/handlers"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
+
+	"gobglbridge/config"
+	"gobglbridge/workers/handlers"
 
 	"github.com/go-chi/chi"
 	"github.com/go-chi/chi/middleware"
@@ -42,14 +43,28 @@ func Worker_HTTP() {
 	r.Get("/stats/returnfail", handlers.GetReturnFailTransactions)
 
 	// a bit of logic to prevent directory listing
-	r.Get("/*", func(w http.ResponseWriter, r *http.Request) {
-		workDir, _ := os.Getwd()
-		filesDir := filepath.Join(workDir, "app")
-		if _, err := os.Stat(filesDir + r.URL.Path); errors.Is(err, os.ErrNotExist) {
-			http.ServeFile(w, r, filepath.Join(filesDir, "index.html"))
-		}
-		http.ServeFile(w, r, filesDir+r.URL.Path)
-	})
+	r.Get(
+		"/*", func(w http.ResponseWriter, r *http.Request) {
+			workDir, _ := os.Getwd()
+			filesDir := filepath.Join(workDir, "app")
+			filePath := filepath.Join(filesDir, strings.Replace(r.URL.Path, "\\", "/", -1))
+
+			fileInfo, err := os.Stat(filePath)
+			if err != nil || fileInfo.IsDir() {
+				filePath = filepath.Join(filesDir, "index.html")
+				fileInfo, _ = os.Stat(filePath)
+			}
+
+			file, err := os.Open(filePath)
+			if err != nil {
+				// this should not happen at this point
+				http.Error(w, "unable to open", http.StatusInternalServerError)
+				return
+			}
+
+			http.ServeContent(w, r, file.Name(), fileInfo.ModTime(), file)
+		},
+	)
 
 	var server *http.Server
 
@@ -106,5 +121,8 @@ func Worker_HTTP() {
 func CORSHeaders(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Access-Control-Allow-Origin", "*")
 	w.Header().Set("Access-Control-Allow-Methods", "POST, GET, OPTIONS, PUT, DELETE")
-	w.Header().Set("Access-Control-Allow-Headers", "Accept, Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, Origin, X-Requested-With")
+	w.Header().Set(
+		"Access-Control-Allow-Headers",
+		"Accept, Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, Origin, X-Requested-With",
+	)
 }

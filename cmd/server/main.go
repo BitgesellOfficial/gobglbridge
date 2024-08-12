@@ -2,12 +2,13 @@ package main
 
 import (
 	"fmt"
-	"gobglbridge/config"
-	"gobglbridge/redis"
-	"gobglbridge/workers"
 	"log"
 	"os"
 	"time"
+
+	"gobglbridge/config"
+	"gobglbridge/redis"
+	"gobglbridge/workers"
 )
 
 func main() {
@@ -26,7 +27,7 @@ func main() {
 	fmt.Printf("%+v", config.Config)
 
 	// connect to Redis, without persistence do not continue
-	redis.RedisInit()
+	redis.Init()
 
 	// there are 7 worker threads:
 	// * listen to BGL blocks

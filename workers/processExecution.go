@@ -3,17 +3,19 @@ package workers
 import (
 	"context"
 	"fmt"
+	"log"
+	"math/big"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/ethereum/go-ethereum/ethclient"
 	"gobglbridge/BGLRPC"
 	"gobglbridge/EVMRPC"
 	"gobglbridge/EVMRPC/ierc20"
 	"gobglbridge/config"
 	"gobglbridge/redis"
 	"gobglbridge/types"
-	"log"
-	"math/big"
-	"strconv"
-	"strings"
-	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -29,13 +31,16 @@ func Worker_processExecution() {
 		if err != nil {
 			log.Printf("Error getting pending bridge operations by status: %v", err)
 		} else if pending == nil {
-			//log.Printf("No pending operations are present")
+			// log.Printf("No pending operations are present")
 		} else {
 			if pending.SourceChain > 0 {
 				// WBGL to BGL
 				log.Printf("Found pending WBGL to BGL bridge operation, %#v\n", pending)
 
-				addrbookRecord, err := redis.GetAddressBookBySourceAddress(types.CHAINKEY_EVM, strings.ToLower(pending.SourceAddress))
+				addrbookRecord, err := redis.GetAddressBookBySourceAddress(
+					types.CHAINKEY_EVM,
+					strings.ToLower(pending.SourceAddress),
+				)
 				if err != nil {
 					pending.Status = "failed"
 					msg := fmt.Sprintf("Error getting address book record: %s", err.Error())
@@ -65,7 +70,15 @@ func Worker_processExecution() {
 					amountFee := amountFloat * float64(config.Config.FeePercentage) / 100.0
 					amountFloat = amountFloat - amountFee
 
-					log.Printf("Sending BGL mainnet tx: %.8f (fee %.8f) to %s", amountFloat, amountFee, addrbookRecord.DestAddress)
+					// truncate to 8 decimal places
+					amountFloat = float64(int(amountFloat*100000000)) / 100000000
+
+					log.Printf(
+						"Sending BGL mainnet tx: %.8f (fee %.8f) to %s",
+						amountFloat,
+						amountFee,
+						addrbookRecord.DestAddress,
+					)
 
 					tx, err := BGLRPC.GetClient().SendToAddress(addrbookRecord.DestAddress, amountFloat)
 					if err == nil {
@@ -74,7 +87,14 @@ func Worker_processExecution() {
 						pending.DestChain = 0
 						pending.DestTxHash = tx
 					} else {
-						msg := fmt.Sprintf("Error sending %.8f BGL to %v: %v, trying to return %s WBGL on %v", amountFloat, addrbookRecord.DestAddress, err, pending.Amount, config.EVMChains[pending.SourceChain])
+						msg := fmt.Sprintf(
+							"Error sending %.8f BGL to %v: %v, trying to return %s WBGL on %v",
+							amountFloat,
+							addrbookRecord.DestAddress,
+							err,
+							pending.Amount,
+							config.EVMChains[pending.SourceChain],
+						)
 						log.Print(msg)
 						if pending.Message == "" {
 							pending.Message = msg
@@ -88,11 +108,22 @@ func Worker_processExecution() {
 						pending.DestChain = pending.SourceChain
 						pending.DestAddress = pending.SourceAddress
 						if err == nil {
-							log.Printf("Executed returning %s WBGL(%s) to %v, txid: %v", amountBI.String(), config.EVMChains[pending.DestChain].Name, addrbookRecord.DestAddress, tx.Hash().Hex())
+							log.Printf(
+								"Executed returning %s WBGL(%s) to %v, txid: %v",
+								amountBI.String(),
+								config.EVMChains[pending.DestChain].Name,
+								addrbookRecord.DestAddress,
+								tx.Hash().Hex(),
+							)
 							pending.Status = "returning"
 							pending.DestTxHash = tx.Hash().Hex()
 						} else {
-							log.Printf("Error returning %s WBGL to %v: %v", amountBI.String(), addrbookRecord.DestAddress, err)
+							log.Printf(
+								"Error returning %s WBGL to %v: %v",
+								amountBI.String(),
+								addrbookRecord.DestAddress,
+								err,
+							)
 							pending.Status = "returnfail"
 						}
 
@@ -113,7 +144,10 @@ func Worker_processExecution() {
 				log.Printf("Found pending BGL to WBGL bridge operation, %#v\n", pending)
 
 				sleep := false
-				addrbookRecord, err := redis.GetAddressBookBySourceAddress(types.CHAINKEY_BGL, strings.ToLower(pending.SourceAddress))
+				addrbookRecord, err := redis.GetAddressBookBySourceAddress(
+					types.CHAINKEY_BGL,
+					strings.ToLower(pending.SourceAddress),
+				)
 				if err != nil {
 					log.Printf("Error getting address book record: %s", err.Error())
 					pending.Status = "failed"
@@ -143,17 +177,35 @@ func Worker_processExecution() {
 						WorkerShutdown = true
 					}
 
-					log.Printf("Sending WBGL(%s) tx: %s (fee %s) to %s", config.EVMChains[pending.DestChain].Name, amountBI.String(), amountFee.String(), addrbookRecord.DestAddress)
+					log.Printf(
+						"Sending WBGL(%s) tx: %s (fee %s) to %s",
+						config.EVMChains[pending.DestChain].Name,
+						amountBI.String(),
+						amountFee.String(),
+						addrbookRecord.DestAddress,
+					)
 					tx, err := sendWBGL(pending.DestChain, addrbookRecord.DestAddress, amountBI)
 					sleep = true
 
 					if err == nil {
-						log.Printf("Executed sending %s WBGL(%s) to %v, txid: %v", amountBI.String(), config.EVMChains[pending.DestChain].Name, addrbookRecord.DestAddress, tx.Hash().Hex())
+						log.Printf(
+							"Executed sending %s WBGL(%s) to %v, txid: %v",
+							amountBI.String(),
+							config.EVMChains[pending.DestChain].Name,
+							addrbookRecord.DestAddress,
+							tx.Hash().Hex(),
+						)
 						pending.DestTxHash = tx.Hash().Hex()
 
 					} else {
 
-						msg := fmt.Sprintf("Error sending %s WBGL to %v: %v, trying to return %s BGL", amountBI.String(), addrbookRecord.DestAddress, err, pending.Amount)
+						msg := fmt.Sprintf(
+							"Error sending %s WBGL to %v: %v, trying to return %s BGL",
+							amountBI.String(),
+							addrbookRecord.DestAddress,
+							err,
+							pending.Amount,
+						)
 						log.Print(msg)
 						if pending.Message == "" {
 							pending.Message = msg
@@ -163,7 +215,12 @@ func Worker_processExecution() {
 
 						sourceSenderAddress, err := BGLRPC.GetClient().GetFromAddressForTransaction(pending.SourceTxHash)
 						if err != nil {
-							log.Printf("Error getting sender address for txid %s BGL to %v: %v", pending.Amount, pending.SourceTxHash, err)
+							log.Printf(
+								"Error getting sender address for txid %s BGL to %v: %v",
+								pending.Amount,
+								pending.SourceTxHash,
+								err,
+							)
 							pending.Status = "returnfail"
 						} else {
 							pending.DestChain = pending.SourceChain
@@ -171,11 +228,21 @@ func Worker_processExecution() {
 							amountFloatReturn, _ := strconv.ParseFloat(pending.Amount, 64)
 							tx, err := BGLRPC.GetClient().SendToAddress(sourceSenderAddress, amountFloatReturn)
 							if err == nil {
-								log.Printf("Executed returning %.8f BGL to %v, txid: %v", amountFloatReturn, sourceSenderAddress, tx)
+								log.Printf(
+									"Executed returning %.8f BGL to %v, txid: %v",
+									amountFloatReturn,
+									sourceSenderAddress,
+									tx,
+								)
 								pending.Status = "returning"
 								pending.DestTxHash = tx
 							} else {
-								log.Printf("Error returning %.8f BGL to %v: %v", amountFloatReturn, sourceSenderAddress, err)
+								log.Printf(
+									"Error returning %.8f BGL to %v: %v",
+									amountFloatReturn,
+									sourceSenderAddress,
+									err,
+								)
 								pending.Status = "returnfail"
 							}
 						}
@@ -197,7 +264,7 @@ func Worker_processExecution() {
 			}
 		}
 
-		//break // debugging
+		// break // debugging
 	}
 }
 
@@ -206,15 +273,22 @@ func sendWBGL(chainId int, address string, amount *big.Int) (*ethtypes.Transacti
 
 	var reterr error
 	for i := 0; i < config.EVM_RETRIES; i++ {
-		client := EVMRPC.GetClient(chainId, i)
-		nonce, err := client.PendingNonceAt(context.Background(), common.HexToAddress(config.Config.EVM.PublicAddress))
+		nonce, err := EVMRPC.WithClient(
+			chainId, func(client *ethclient.Client) (uint64, error) {
+				return client.PendingNonceAt(context.Background(), common.HexToAddress(config.Config.EVM.PublicAddress))
+			},
+		)
 		if err != nil {
 			reterr = fmt.Errorf("error getting nonce for wallet: %s", err)
 			log.Print(err.Error())
 			continue
 		}
 
-		gasPrice, err := client.SuggestGasPrice(context.Background())
+		gasPrice, err := EVMRPC.WithClient(
+			chainId, func(client *ethclient.Client) (*big.Int, error) {
+				return client.SuggestGasPrice(context.Background())
+			},
+		)
 		if err != nil {
 			reterr = fmt.Errorf("error getting suggested gas price: %s", err)
 			log.Print(err.Error())
@@ -239,14 +313,17 @@ func sendWBGL(chainId int, address string, amount *big.Int) (*ethtypes.Transacti
 			auth.GasPrice = gasPrice.Mul(gasPrice, big.NewInt(2))
 		}
 
-		WBGLcontract, err := ierc20.NewIerc20(common.HexToAddress(config.EVMChains[chainId].ContractAddress), client)
-		if err != nil {
-			reterr = fmt.Errorf("error instantiating contract: %s", err)
-			log.Print(err.Error())
-			continue
-		}
+		tx, err = EVMRPC.WithClient(
+			chainId, func(client *ethclient.Client) (*ethtypes.Transaction, error) {
+				WBGL, err := ierc20.NewIerc20(common.HexToAddress(config.EVMChains[chainId].ContractAddress), client)
+				if err != nil {
+					log.Println(fmt.Sprintf("Error creating contract instance: %s", err))
+					return nil, err
+				}
+				return WBGL.Transfer(auth, common.HexToAddress(address), amount)
+			},
+		)
 
-		tx, err = WBGLcontract.Transfer(auth, common.HexToAddress(address), amount)
 		if err != nil {
 			reterr = fmt.Errorf("error calling transfer method: %s", err)
 			log.Print(err.Error())

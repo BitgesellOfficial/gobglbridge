@@ -2,12 +2,14 @@ package handlers
 
 import (
 	"fmt"
-	"gobglbridge/EVMRPC"
-	"gobglbridge/EVMRPC/ierc20"
-	"gobglbridge/config"
 	"log"
 	"math/big"
 	"net/http"
+
+	"github.com/ethereum/go-ethereum/ethclient"
+	"gobglbridge/EVMRPC"
+	"gobglbridge/EVMRPC/ierc20"
+	"gobglbridge/config"
 
 	"github.com/ethereum/go-ethereum/common"
 )
@@ -29,7 +31,6 @@ func BalanceArb(w http.ResponseWriter, r *http.Request) {
 }
 
 func BalanceEVM(w http.ResponseWriter, r *http.Request, chainId int) {
-
 	balanceBI, err := WBGLBalanceInt(chainId)
 	if err != nil {
 		responsePlain(w, []byte("error"), http.StatusInternalServerError)
@@ -42,25 +43,21 @@ func BalanceEVM(w http.ResponseWriter, r *http.Request, chainId int) {
 }
 
 func WBGLBalanceInt(chainId int) (*big.Int, error) {
-	var reterr error
-	for i := 0; i < config.EVM_RETRIES; i++ {
-		client := EVMRPC.GetClient(chainId, i)
+	balanceBI, err := EVMRPC.WithClient(
+		chainId, func(client *ethclient.Client) (*big.Int, error) {
+			WBGL, err := ierc20.NewIerc20(common.HexToAddress(config.EVMChains[chainId].ContractAddress), client)
+			if err != nil {
+				log.Println(fmt.Sprintf("Error creating contract instance: %s", err))
+				return nil, err
+			}
 
-		WBGLcontract, err := ierc20.NewIerc20(common.HexToAddress(config.EVMChains[chainId].ContractAddress), client)
-		if err != nil {
-			reterr = fmt.Errorf("error creating contract instance: %s", err)
-			log.Print(err.Error())
-			continue
-		}
-
-		balanceBI, err := WBGLcontract.BalanceOf(nil, common.HexToAddress(config.Config.EVM.PublicAddress))
-		if err != nil {
-			reterr = fmt.Errorf("error getting balance: %s", err)
-			log.Print(err.Error())
-			continue
-		}
-
-		return balanceBI, nil
+			return WBGL.BalanceOf(nil, common.HexToAddress(config.Config.EVM.PublicAddress))
+		},
+	)
+	if err != nil {
+		log.Println(fmt.Sprintf("Error getting balance: %s", err))
+		return nil, err
 	}
-	return nil, reterr
+
+	return balanceBI, nil
 }

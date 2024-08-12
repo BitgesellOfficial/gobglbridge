@@ -1,33 +1,28 @@
 package EVMRPC
 
 import (
-	"gobglbridge/config"
+	"fmt"
 	"log"
+
+	"gobglbridge/config"
 
 	"github.com/ethereum/go-ethereum/ethclient"
 )
 
-var clients map[int]*ethclient.Client = make(map[int]*ethclient.Client)
-
-// remember last good RPC and round-robin on failures
-var roundrobin map[int]int = make(map[int]int)
-
-func GetClient(chainId int, attempt int) *ethclient.Client {
-	if _, ok := roundrobin[chainId]; !ok {
-		roundrobin[chainId] = 0
-	}
-	if attempt > 0 {
-		// try next RPC
-		roundrobin[chainId] = roundrobin[chainId] + 1
-	}
-
-	if clients[chainId] == nil {
-		client, err := ethclient.Dial(config.EVMChains[chainId].RPCList[roundrobin[chainId]])
+func WithClient[T any](chainId int, f func(client *ethclient.Client) (T, error)) (res T, err error) {
+	var client *ethclient.Client
+	for _, url := range config.EVMChains[chainId].RPCList {
+		client, err = ethclient.Dial(url)
 		if err != nil {
-			log.Fatalln(err)
+			log.Println(fmt.Sprintf("Error connecting to %s: %s", url, err.Error()))
+			continue
 		}
-		clients[chainId] = client
-		return client
+
+		res, err = f(client)
+		client.Close()
+		if err == nil {
+			return
+		}
 	}
-	return clients[chainId]
+	return
 }
