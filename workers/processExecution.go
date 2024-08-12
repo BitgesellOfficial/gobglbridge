@@ -24,6 +24,8 @@ import (
 )
 
 func Worker_processExecution() {
+	initNonces()
+
 	for !WorkerShutdown {
 		time.Sleep(3 * time.Second)
 
@@ -270,20 +272,9 @@ func Worker_processExecution() {
 
 func sendWBGL(chainId int, address string, amount *big.Int) (*ethtypes.Transaction, error) {
 	var tx *ethtypes.Transaction
-
 	var reterr error
-	for i := 0; i < config.EVM_RETRIES; i++ {
-		nonce, err := EVMRPC.WithClient(
-			chainId, func(client *ethclient.Client) (uint64, error) {
-				return client.PendingNonceAt(context.Background(), common.HexToAddress(config.Config.EVM.PublicAddress))
-			},
-		)
-		if err != nil {
-			reterr = fmt.Errorf("error getting nonce for wallet: %s", err)
-			log.Print(err.Error())
-			continue
-		}
 
+	for i := 0; i < config.EVM_RETRIES; i++ {
 		gasPrice, err := EVMRPC.WithClient(
 			chainId, func(client *ethclient.Client) (*big.Int, error) {
 				return client.SuggestGasPrice(context.Background())
@@ -304,7 +295,7 @@ func sendWBGL(chainId int, address string, amount *big.Int) (*ethtypes.Transacti
 			return nil, fmt.Errorf("error instantiating contract call: %s", err)
 		}
 
-		auth.Nonce = big.NewInt(int64(nonce))
+		auth.Nonce = big.NewInt(int64(nonces[chainId]))
 		auth.Value = big.NewInt(0)
 		auth.GasLimit = uint64(200000)
 		if chainId == 1 {
@@ -330,8 +321,28 @@ func sendWBGL(chainId int, address string, amount *big.Int) (*ethtypes.Transacti
 			continue
 		}
 
+		nonces[chainId]++
+
 		return tx, nil
 	}
 
 	return tx, reterr
+}
+
+var nonces map[int]uint64
+
+func initNonces() {
+	nonces = make(map[int]uint64)
+	for _, chain := range config.EVMChains {
+		nonce, err := EVMRPC.WithClient(
+			chain.ChainID, func(client *ethclient.Client) (uint64, error) {
+				return client.PendingNonceAt(context.Background(), common.HexToAddress(config.Config.EVM.PublicAddress))
+			},
+		)
+		if err != nil {
+			panic(fmt.Sprintf("Error getting pending nonce for chain %s: %s", chain.Name, err))
+		}
+
+		nonces[chain.ChainID] = nonce
+	}
 }
