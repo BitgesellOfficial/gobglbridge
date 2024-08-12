@@ -295,7 +295,12 @@ func sendWBGL(chainId int, address string, amount *big.Int) (*ethtypes.Transacti
 			return nil, fmt.Errorf("error instantiating contract call: %s", err)
 		}
 
-		auth.Nonce = big.NewInt(int64(nonces[chainId]))
+		nonce, err := getNonce(chainId)
+		if err != nil {
+			log.Println(err.Error())
+		}
+
+		auth.Nonce = big.NewInt(int64(nonce))
 		auth.Value = big.NewInt(0)
 		auth.GasLimit = uint64(200000)
 		if chainId == 1 {
@@ -333,16 +338,33 @@ var nonces map[int]uint64
 
 func initNonces() {
 	nonces = make(map[int]uint64)
-	for _, chain := range config.EVMChains {
-		nonce, err := EVMRPC.WithClient(
-			chain.ChainID, func(client *ethclient.Client) (uint64, error) {
-				return client.PendingNonceAt(context.Background(), common.HexToAddress(config.Config.EVM.PublicAddress))
-			},
-		)
+	for chainId := range config.EVMChains {
+		_, err := getNonce(chainId)
 		if err != nil {
-			panic(fmt.Sprintf("Error getting pending nonce for chain %s: %s", chain.Name, err))
+			panic(fmt.Sprintf("Unable to initialize: %s", err.Error()))
 		}
-
-		nonces[chain.ChainID] = nonce
 	}
+}
+
+func getNonce(chainId int) (uint64, error) {
+	nonce, err := EVMRPC.WithClient(
+		chainId, func(client *ethclient.Client) (uint64, error) {
+			return client.PendingNonceAt(context.Background(), common.HexToAddress(config.Config.EVM.PublicAddress))
+		},
+	)
+	if err != nil {
+		return nonces[chainId], fmt.Errorf(
+			"error getting pending nonce for %s: %s",
+			config.EVMChains[chainId].Name,
+			err.Error(),
+		)
+	}
+
+	// Only update when initializing or in case of external transactions
+	_, ok := nonces[chainId]
+	if !ok || nonce > nonces[chainId] {
+		nonces[chainId] = nonce
+	}
+
+	return nonces[chainId], nil
 }
