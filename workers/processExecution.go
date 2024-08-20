@@ -24,6 +24,8 @@ import (
 )
 
 func Worker_processExecution() {
+	initNonces()
+
 	for !WorkerShutdown {
 		time.Sleep(3 * time.Second)
 
@@ -270,20 +272,9 @@ func Worker_processExecution() {
 
 func sendWBGL(chainId int, address string, amount *big.Int) (*ethtypes.Transaction, error) {
 	var tx *ethtypes.Transaction
-
 	var reterr error
-	for i := 0; i < config.EVM_RETRIES; i++ {
-		nonce, err := EVMRPC.WithClient(
-			chainId, func(client *ethclient.Client) (uint64, error) {
-				return client.PendingNonceAt(context.Background(), common.HexToAddress(config.Config.EVM.PublicAddress))
-			},
-		)
-		if err != nil {
-			reterr = fmt.Errorf("error getting nonce for wallet: %s", err)
-			log.Print(err.Error())
-			continue
-		}
 
+	for i := 0; i < config.EVM_RETRIES; i++ {
 		gasPrice, err := EVMRPC.WithClient(
 			chainId, func(client *ethclient.Client) (*big.Int, error) {
 				return client.SuggestGasPrice(context.Background())
@@ -302,6 +293,11 @@ func sendWBGL(chainId int, address string, amount *big.Int) (*ethtypes.Transacti
 		auth, err := bind.NewKeyedTransactorWithChainID(privateKey, big.NewInt(int64(chainId)))
 		if err != nil {
 			return nil, fmt.Errorf("error instantiating contract call: %s", err)
+		}
+
+		nonce, err := getNonce(chainId)
+		if err != nil {
+			log.Println(err.Error())
 		}
 
 		auth.Nonce = big.NewInt(int64(nonce))
@@ -330,8 +326,45 @@ func sendWBGL(chainId int, address string, amount *big.Int) (*ethtypes.Transacti
 			continue
 		}
 
+		nonces[chainId]++
+
 		return tx, nil
 	}
 
 	return tx, reterr
+}
+
+var nonces map[int]uint64
+
+func initNonces() {
+	nonces = make(map[int]uint64)
+	for chainId := range config.EVMChains {
+		_, err := getNonce(chainId)
+		if err != nil {
+			panic(fmt.Sprintf("Unable to initialize: %s", err.Error()))
+		}
+	}
+}
+
+func getNonce(chainId int) (uint64, error) {
+	nonce, err := EVMRPC.WithClient(
+		chainId, func(client *ethclient.Client) (uint64, error) {
+			return client.PendingNonceAt(context.Background(), common.HexToAddress(config.Config.EVM.PublicAddress))
+		},
+	)
+	if err != nil {
+		return nonces[chainId], fmt.Errorf(
+			"error getting pending nonce for %s: %s",
+			config.EVMChains[chainId].Name,
+			err.Error(),
+		)
+	}
+
+	// Only update when initializing or in case of external transactions
+	_, ok := nonces[chainId]
+	if !ok || nonce > nonces[chainId] {
+		nonces[chainId] = nonce
+	}
+
+	return nonces[chainId], nil
 }

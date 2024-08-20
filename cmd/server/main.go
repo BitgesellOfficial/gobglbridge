@@ -14,7 +14,11 @@ import (
 func main() {
 	log.Print("Starting BGL/WBGL bridge")
 
-	f, err := os.OpenFile(fmt.Sprintf("logs/log_%s.txt", time.Now().Format("2006-01-02")), os.O_RDWR|os.O_CREATE|os.O_APPEND, 0666)
+	f, err := os.OpenFile(
+		fmt.Sprintf("logs/log_%s.txt", time.Now().Format("2006-01-02")),
+		os.O_RDWR|os.O_CREATE|os.O_APPEND,
+		0666,
+	)
 	if err != nil {
 		log.Fatalf("error opening log file for writing: %v", err)
 	}
@@ -24,7 +28,7 @@ func main() {
 
 	config.Init()
 	// this is for debug, makes output contain sensitive info
-	fmt.Printf("%+v", config.Config)
+	fmt.Printf("%+v\n", config.Config)
 
 	// connect to Redis, without persistence do not continue
 	redis.Init()
