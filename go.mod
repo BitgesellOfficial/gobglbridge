@@ -7,13 +7,15 @@ toolchain go1.21.5
 require (
 	github.com/KOREAN139/ethereum-address-validator v0.0.0-20190208195608-a09e2036cc46
 	github.com/bitgesellofficial/go-bgld v0.0.0-20240812075615-db3f929663c8
-	github.com/ethereum/go-ethereum v1.14.7
+	github.com/ethereum/go-ethereum v1.14.8
 	github.com/go-chi/chi/v5 v5.1.0
 	github.com/gomodule/redigo v1.9.2
 	github.com/google/uuid v1.6.0
 	github.com/kelseyhightower/envconfig v1.4.0
 	gopkg.in/yaml.v2 v2.4.0
 )
+
+replace github.com/bitgesellofficial/go-bgld => github.com/0xdevolution/go-bgld v0.0.0-20240820123517-9090ce06a704
 
 require (
 	github.com/Microsoft/go-winio v0.6.2 // indirect
