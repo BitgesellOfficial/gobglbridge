@@ -91,5 +91,5 @@ var RedisStatusSets = map[string]string{
 	"success":       "bridgeops:success",       // destination transaction entered block and was scanned
 	"returning":     "bridgeops:returning",     // tried to return funds because destination has not enough BGL or gas
 	"returnfail":    "bridgeops:returnfail",    // tried to initiate return but encountered a fn error
-	"returnsuccess": "brdigeops:returnsuccess", // funds returned successfully
+	"returnsuccess": "bridgeops:returnsuccess", // funds returned successfully
 }
