@@ -14,7 +14,6 @@ import (
 	"strings"
 	"time"
 
-	ethav "github.com/KOREAN139/ethereum-address-validator"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -49,7 +48,7 @@ func SubmitWBGL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := ethav.Validate(common.HexToAddress(req.EthAddress).Hex()); err != nil {
+	if err := validateEVMAddress(req.EthAddress); err != nil {
 		log.Printf("Error validating Eth address '%s': %s\n", req.EthAddress, err.Error())
 		responseJSON(w, &APIResponse{
 			Status:  "error",

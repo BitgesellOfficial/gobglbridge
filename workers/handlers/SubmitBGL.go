@@ -12,9 +12,6 @@ import (
 	"math/big"
 	"net/http"
 	"time"
-
-	ethav "github.com/KOREAN139/ethereum-address-validator"
-	"github.com/ethereum/go-ethereum/common"
 )
 
 type BGLtoWBGLBindingRequest struct {
@@ -44,7 +41,7 @@ func SubmitBGL(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := ethav.Validate(common.HexToAddress(req.Address).Hex()); err != nil {
+	if err := validateEVMAddress(req.Address); err != nil {
 		log.Printf("Error validating EVM address '%s': %s\n", req.Address, err.Error())
 		responseJSON(w, &APIResponse{
 			Status:  "error",
