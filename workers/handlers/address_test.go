@@ -32,3 +32,9 @@ func TestValidateEVMAddressAcceptsChecksummedAndLowercaseInput(t *testing.T) {
 		}
 	}
 }
+
+func TestValidateEVMAddressRejectsBadChecksumInput(t *testing.T) {
+	if err := validateEVMAddress("0x52908400098527886e0F7030069857D2E4169EE7"); err == nil {
+		t.Fatal("validateEVMAddress accepted a mixed-case address with a bad checksum")
+	}
+}
