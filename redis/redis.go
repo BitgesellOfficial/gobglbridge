@@ -218,12 +218,16 @@ func FindBridgeOperationByFieldStringValue(field, value string, status string) (
 	if field == "" || value == "" {
 		return nil, errors.New("empty search field name or value")
 	}
+	statusSet, ok := config.RedisStatusSets[status]
+	if !ok {
+		return nil, errors.New("redis key not found for status")
+	}
 
 	// scan every operation present in Redis
 	var cursor int64
 
 	for {
-		values, err := redis.Values(conn.Do("SSCAN", config.RedisStatusSets[status], cursor))
+		values, err := redis.Values(conn.Do("SSCAN", statusSet, cursor))
 		if err != nil {
 			return nil, err
 		}
@@ -236,13 +240,15 @@ func FindBridgeOperationByFieldStringValue(field, value string, status string) (
 
 		for _, key := range opKeys {
 			op, err := redis.Bytes(conn.Do("GET", key))
-			if err != nil && !errors.Is(err, redis.ErrNil) {
+			if errors.Is(err, redis.ErrNil) {
+				continue
+			}
+			if err != nil {
 				log.Printf("error Redis GET: %s", err.Error())
 				return nil, err
 			}
 
 			var opStruct types.BridgeOperation
-			// TODO: a record can be missing, don't crash
 			// fmt.Printf("record:" + string(op) + "\n")
 			err = json.Unmarshal([]byte(op), &opStruct)
 			if err != nil {
@@ -360,13 +366,15 @@ func FindAllBridgeOperationsByStatus(status string) ([]*types.BridgeOperation, e
 
 		for _, key := range opKeys {
 			op, err := redis.Bytes(conn.Do("GET", key))
-			if err != nil && !errors.Is(err, redis.ErrNil) {
+			if errors.Is(err, redis.ErrNil) {
+				continue
+			}
+			if err != nil {
 				log.Printf("error Redis GET: %s", err.Error())
 				return nil, err
 			}
 
 			var opStruct types.BridgeOperation
-			// TODO: a record can be missing, don't crash
 			// fmt.Printf("record:" + string(op) + "\n")
 			err = json.Unmarshal([]byte(op), &opStruct)
 			if err != nil {
