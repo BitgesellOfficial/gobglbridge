@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 )
 
@@ -39,24 +40,13 @@ func TestValidateMsgSignatureRejectsMalformedLength(t *testing.T) {
 }
 
 func TestValidateMsgSignatureAcceptsRecoveryIDs(t *testing.T) {
-	privateKey, err := crypto.GenerateKey()
-	if err != nil {
-		t.Fatalf("generate key: %v", err)
-	}
+	sig, expected := signedMessage(t, "bgl-address")
 
-	message := "bgl-address"
-	hash := prefixHash([]byte(message))
-	sig, err := crypto.Sign(hash.Bytes(), privateKey)
-	if err != nil {
-		t.Fatalf("sign message: %v", err)
-	}
-
-	expected := crypto.PubkeyToAddress(privateKey.PublicKey)
 	for _, recoveryID := range []byte{sig[64], sig[64] + 27} {
 		sigWithRecovery := append([]byte(nil), sig...)
 		sigWithRecovery[64] = recoveryID
 
-		addr, err := validateMsgSignature(message, "0x"+hex.EncodeToString(sigWithRecovery))
+		addr, err := validateMsgSignature("bgl-address", "0x"+hex.EncodeToString(sigWithRecovery))
 		if err != nil {
 			t.Fatalf("expected valid signature with recovery ID %d: %v", recoveryID, err)
 		}
@@ -64,4 +54,43 @@ func TestValidateMsgSignatureAcceptsRecoveryIDs(t *testing.T) {
 			t.Fatalf("expected recovered address %s, got %v", expected.Hex(), addr)
 		}
 	}
+}
+
+func TestValidateMsgSignatureRejectsInvalidRecoveryIDs(t *testing.T) {
+	sig, _ := signedMessage(t, "bgl-address")
+
+	for _, recoveryID := range []byte{2, 26, 29, 255} {
+		t.Run(hex.EncodeToString([]byte{recoveryID}), func(t *testing.T) {
+			sigWithRecovery := append([]byte(nil), sig...)
+			sigWithRecovery[64] = recoveryID
+
+			addr, err := validateMsgSignature("bgl-address", "0x"+hex.EncodeToString(sigWithRecovery))
+			if err == nil {
+				t.Fatalf("expected invalid recovery ID %d to be rejected", recoveryID)
+			}
+			if addr != nil {
+				t.Fatalf("expected nil address for invalid recovery ID %d, got %s", recoveryID, addr.Hex())
+			}
+			if !strings.Contains(err.Error(), "checksum") {
+				t.Fatalf("expected checksum validation error, got %q", err.Error())
+			}
+		})
+	}
+}
+
+func signedMessage(t *testing.T, message string) ([]byte, common.Address) {
+	t.Helper()
+
+	privateKey, err := crypto.GenerateKey()
+	if err != nil {
+		t.Fatalf("generate key: %v", err)
+	}
+
+	hash := prefixHash([]byte(message))
+	sig, err := crypto.Sign(hash.Bytes(), privateKey)
+	if err != nil {
+		t.Fatalf("sign message: %v", err)
+	}
+
+	return sig, crypto.PubkeyToAddress(privateKey.PublicKey)
 }
