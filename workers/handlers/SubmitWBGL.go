@@ -182,6 +182,10 @@ func validateMsgSignature(msg string, sig string) (*common.Address, error) {
 		log.Printf("Invalid signature '%s' hex: %s", sig, err.Error())
 		return nil, fmt.Errorf("invalid signature hex")
 	}
+	if len(sigBytes) != 65 {
+		log.Printf("Wrong signature '%s' length: %d", sig, len(sigBytes))
+		return nil, fmt.Errorf("wrong signature length")
+	}
 
 	if sigBytes[64] != 27 && sigBytes[64] != 28 && sigBytes[64] != 0 && sigBytes[64] != 1 {
 		log.Printf("Wrong signature '%s' checksum: %v", sig, sigBytes[64])
